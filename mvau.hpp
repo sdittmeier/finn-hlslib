@@ -246,7 +246,8 @@ void Matrix_Vector_Activate_Stream_Batch(hls::stream<TI> &in,
   // everything merged into a common iteration space (one "big" loop instead
   // of smaller nested loops) to get the pipelinening the way we want
   unsigned const TOTAL_FOLD = NF * SF;
-  for(unsigned  i = 0; i < reps * TOTAL_FOLD; i++) {
+  //for(unsigned  i = 0; i < reps * TOTAL_FOLD; i++) {
+  while(true) {
 #pragma HLS pipeline style=flp II=1
     TI  inElem;
 
