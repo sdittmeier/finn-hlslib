@@ -243,6 +243,9 @@ void Matrix_Vector_Activate_Stream_Batch(hls::stream<TI> &in,
   unsigned  sf   = 0;
   unsigned  tile = 0; // invariant: tile = nf*SF + sf
   
+  bool inElemValid = false;
+  bool weightValid = false;
+
   // everything merged into a common iteration space (one "big" loop instead
   // of smaller nested loops) to get the pipelinening the way we want
   unsigned const TOTAL_FOLD = NF * SF;
@@ -253,7 +256,12 @@ void Matrix_Vector_Activate_Stream_Batch(hls::stream<TI> &in,
 
     if(nf == 0) {
       // read input from stream
-      inElem = in.read();
+      if(!in.empty()) {
+        inElem = in.read();
+        inElemValid = true;
+      } else {
+        inElemValid = false;
+      }
       // store in appropriate buffer for reuse
       inputBuf[sf] = inElem;
     }
@@ -263,6 +271,13 @@ void Matrix_Vector_Activate_Stream_Batch(hls::stream<TI> &in,
     }
 
     // read from the parameter stream
+    if(!weight.empty()) {
+      W_packed = weight.read();
+      weightValid = true;
+    }
+    else {
+      weightValid = false;
+    }
     W_packed = weight.read();
     for (unsigned pe = 0; pe < PE; pe++) {
 #pragma HLS UNROLL
@@ -296,7 +311,9 @@ void Matrix_Vector_Activate_Stream_Batch(hls::stream<TI> &in,
       outElem(pe,0,1) = activation.activate(nf, pe, accu[0][pe]);
           }
 
-      out.write(outElem);
+      if(inElemValid && weightValid){
+        out.write(outElem);
+      }
 
       // next folded neuron or image
       sf = 0;
