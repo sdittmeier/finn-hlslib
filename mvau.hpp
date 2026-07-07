@@ -243,8 +243,7 @@ void Matrix_Vector_Activate_Stream_Batch(hls::stream<TI> &in,
   unsigned  sf   = 0;
   unsigned  tile = 0; // invariant: tile = nf*SF + sf
   
-  bool inElemValid = false;
-  bool weightValid = false;
+  static bool inElemValid = false;
 
   // everything merged into a common iteration space (one "big" loop instead
   // of smaller nested loops) to get the pipelinening the way we want
@@ -259,6 +258,8 @@ void Matrix_Vector_Activate_Stream_Batch(hls::stream<TI> &in,
       if(!in.empty()) {
         inElem = in.read();
         inElemValid = true;
+        // read from the parameter stream --> must be ready at the same time, otherwise stall
+        W_packed = weight.read();
       } else {
         inElemValid = false;
       }
@@ -270,56 +271,50 @@ void Matrix_Vector_Activate_Stream_Batch(hls::stream<TI> &in,
       inElem = inputBuf[sf];
     }
 
-    // read from the parameter stream
-    if(!weight.empty()) {
-      W_packed = weight.read();
-      weightValid = true;
-    }
-    else {
-      weightValid = false;
-    }
-    W_packed = weight.read();
-    for (unsigned pe = 0; pe < PE; pe++) {
-#pragma HLS UNROLL
-      w.m_weights[pe] = W_packed((pe+1)*SIMD*TW::width-1,pe*SIMD*TW::width);
-    }
-
-    // Threshold Initialisation
-    if(sf == 0) {
-      for(unsigned pe = 0; pe < PE; pe++) {
-#pragma HLS UNROLL
-      accu[0][pe] = activation.init(nf, pe);
+    
+    if(inElemValid){
+      
+      for (unsigned pe = 0; pe < PE; pe++) {
+  #pragma HLS UNROLL
+        w.m_weights[pe] = W_packed((pe+1)*SIMD*TW::width-1,pe*SIMD*TW::width);
       }
-    }
 
-    // compute matrix-vector product for each processing element
-    for(unsigned  pe = 0; pe < PE; pe++) {
-#pragma HLS UNROLL
-      auto const  act = TSrcI()(inElem, 0);
-      auto const  wgt = TWeightI()(w[pe]);
-      //auto const  wgt = w[pe];
-      accu[0][pe] = mac<SIMD>(accu[0][pe], wgt, act, r, 0);
-    }
+      // Threshold Initialisation
+      if(sf == 0) {
+        for(unsigned pe = 0; pe < PE; pe++) {
+  #pragma HLS UNROLL
+        accu[0][pe] = activation.init(nf, pe);
+        }
+      }
 
-    // keep track of which folded synapse/neuron we are processing
-    ++tile;
-    if(++sf == SF) {
-      // produce output and clear accumulators
-      auto  outElem = TDstI().template operator()<TO>();
-      for (unsigned  pe = 0; pe < PE; pe++) {
-#pragma HLS UNROLL
-      outElem(pe,0,1) = activation.activate(nf, pe, accu[0][pe]);
-          }
+      // compute matrix-vector product for each processing element
+      for(unsigned  pe = 0; pe < PE; pe++) {
+  #pragma HLS UNROLL
+        auto const  act = TSrcI()(inElem, 0);
+        auto const  wgt = TWeightI()(w[pe]);
+        //auto const  wgt = w[pe];
+        accu[0][pe] = mac<SIMD>(accu[0][pe], wgt, act, r, 0);
+      }
 
-      if(inElemValid && weightValid){
+      // keep track of which folded synapse/neuron we are processing
+      ++tile;
+      if(++sf == SF) {
+        // produce output and clear accumulators
+        auto  outElem = TDstI().template operator()<TO>();
+        for (unsigned  pe = 0; pe < PE; pe++) {
+  #pragma HLS UNROLL
+        outElem(pe,0,1) = activation.activate(nf, pe, accu[0][pe]);
+            }
+
         out.write(outElem);
-      }
 
-      // next folded neuron or image
-      sf = 0;
-      if(++nf == NF) {
-      nf   = 0;
-      tile = 0;
+
+        // next folded neuron or image
+        sf = 0;
+        if(++nf == NF) {
+        nf   = 0;
+        tile = 0;
+        }
       }
     }
   }
