@@ -221,6 +221,53 @@ public:
   }
 };
 
+/*!
+ * Use a simple per-row threshold comparison as activation function.
+ *
+ * The thresholds are taken from an array indexed by output row.
+ * It is currently public to allow direct initialization and
+ * to make its name accessible for top-level HLS pragmas.
+ *
+ * The default comparison returns true if the threshold value defined for
+ * the indexed row is smaller than the passed accumulator value.
+ */
+template<unsigned NF, unsigned PE, unsigned NumTH, 
+	 typename TA, typename TR, int ActVal = 0, typename Compare = comp::less<TA, TA>>
+class WritableThresholdsActivation {
+public:
+  TA m_thresholds[PE][NF][NumTH];
+  
+public:
+  TA init(__attribute__((unused)) unsigned const  nf, __attribute__((unused)) unsigned const  pe) const {
+#pragma HLS inline
+    return  TA(0);
+  }
+
+public:
+  TR activate(unsigned const  nf, unsigned const  pe,  TA const &accu) const {
+#pragma HLS inline
+    TR result=ActVal;
+	for(unsigned int i=0; i< NumTH; i++){
+#pragma HLS unroll
+      result+=Compare()(m_thresholds[pe][nf][i], accu);
+    }
+    return result;
+  }
+
+public:
+  void write_threshold(const TA value[PE][NF][NumTH]) {
+#pragma HLS inline
+    for(unsigned int pe=0; pe< PE; pe++){
+      for(unsigned int nf=0; nf< NF; nf++){
+        for(unsigned int th=0; th< NumTH; th++){
+          #pragma HLS UNROLL
+            m_thresholds[pe][nf][th] = value[pe][nf][th];
+          }
+        }
+      }
+  }
+};
+
 
 /*!
  * \brief Use a simple activation function with per-row parameters.
