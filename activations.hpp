@@ -266,6 +266,35 @@ public:
         }
       }
   }
+
+  /*!
+   * Partial/sequential threshold write: writes only BATCH threshold entries
+   * (for all PE/NF lanes) starting at runtime index th_base. This allows the
+   * full NumTH-sized threshold table to be streamed in over multiple small
+   * (sub-4096-bit) transfers instead of one large aggregate write, which is
+   * required because Vitis HLS caps aggregate/stream bit-widths at 4096 bits.
+   * Indices th_base+b that fall outside [0, NumTH) are ignored, which allows
+   * the caller to send a ragged final batch when NumTH is not a multiple of
+   * BATCH.
+   */
+ public:
+  template<unsigned BATCH>
+  void write_threshold_partial(const TA value[PE][NF][BATCH], unsigned const th_base) {
+#pragma HLS inline
+    for(unsigned int pe=0; pe< PE; pe++){
+#pragma HLS UNROLL
+      for(unsigned int nf=0; nf< NF; nf++){
+#pragma HLS UNROLL
+        for(unsigned int b=0; b< BATCH; b++){
+#pragma HLS UNROLL
+          unsigned int const idx = th_base + b;
+          if(idx < NumTH) {
+            m_thresholds[pe][nf][idx] = value[pe][nf][b];
+          }
+        }
+      }
+    }
+  }
 };
 
 
